@@ -1,58 +1,68 @@
 from dotenv import load_dotenv
 from requests import post, get
+from flask import Flask, request, redirect, render_template, url_for
+import requests
 import os
 import base64
 import json
+
+app = Flask(__name__)
 
 load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_Secret")
+redirect_uri = "http://localhost:5543/callback"
 
-def get_token():
-    auth_string = client_id + ":" + client_secret
-    auth_bytes = auth_string.encode("utf-8")
-    auth_base64 = str(base64.b64encode(auth_bytes), "utf-8")
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    url = "https://accounts.spotify.com/api/token"
+@app.route('/login')
+def login():
+    # Redirect to the Spotify authorization page
+    return redirect(url_for('authorize'))
+
+@app.route('/authorize')
+def authorize():
+    # Handle authorization here
+    # Redirect to the Spotify authorization URL
+    return "Authorize page"
+
+@app.route('/callback')
+def callback():
+    code = request.args.get('code')
+    state = request.args.get('state')
+    
+    if state != 'your_state':  # Check if state matches
+        return 'State mismatch error'
+    
+    auth_str = f"{client_id}:{client_secret}"
+    auth_b64 = base64.b64encode(auth_str.encode()).decode('utf-8')
+    
     headers = {
-        "Authorization": "Basic " + auth_base64,
-        "Content-Type": "application/x-www-form-urlencoded"
+        'Authorization': f'Basic {auth_b64}',
+        'Content-Type': 'application/x-www-form-urlencoded'
     }
-    data = {"grant_type": "client_credentials"}
-    result = post(url, headers=headers, data=data)
-    json_result = json.loads(result.content)
-    token = json_result["access_token"]
-    return token
-
-def get_auth_header(token):
-    return {"Authorization": "Bearer " + token}
-
-def search_for_artist(token, artist_name):
-    url = "https://api.spotify.com/v1/search"
-    headers = get_auth_header(token)
-    query = f"?q={artist_name}&type=artist&limit=1"
     
-    query_url = url + query
-    result =get(query_url, headers=headers)
-    json_result = json.loads(result.content)["artists"]["items"]
-    if len(json_result) == 0:
-        print("No artist with this name exists...")
-        return None
+    data = {
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': redirect_uri
+    }
     
-    return json_result[0]
+    response = requests.post('https://accounts.spotify.com/api/token', headers=headers, data=data)
+    response_data = response.json()
+    
+    access_token = response_data['access_token']
+    
+    # Fetch user profile
+    profile_response = requests.get('https://api.spotify.com/v1/me', headers={'Authorization': 'Bearer ' + access_token})
+    profile_data = profile_response.json()
+    
+    display_name = profile_data.get('display_name', 'Unknown')
+    
+    return f'Hello, {display_name}! Your access token is: {access_token}'
 
-def get_songs_by_artist(token, artist_id):
-    url = f"https://api.spotify.com/v1/artists/{artist_id}/top-tracks?country=US"
-    headers = get_auth_header(token)
-    result = get(url, headers=headers)
-    json_result = json.loads(result.content)["tracks"]
-    return json_result
-
-token = get_token()
-result = search_for_artist(token, "Aphex Twin")
-artist_id = result["id"]
-songs = get_songs_by_artist(token, artist_id)
-
-for idx, song in enumerate(songs):
-    print(f"{idx + 1}. {song["name"]}")
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5543)
