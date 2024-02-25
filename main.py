@@ -1,5 +1,4 @@
 from dotenv import load_dotenv
-from requests import post, get
 from flask import Flask, request, redirect, render_template, url_for
 import requests
 import os
@@ -12,7 +11,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_Secret")
-redirect_uri = "http://localhost:5543/callback"
+redirect_uri = "http://192.168.0.195:5543/callback" # remember to change this to pi IPV4 address when ready for deployment
 
 @app.route('/')
 def index():
@@ -25,9 +24,9 @@ def login():
 
 @app.route('/authorize')
 def authorize():
-    # Handle authorization here
-    # Redirect to the Spotify authorization URL
-    return "Authorize page"
+    state = 'your_state'  # Generate a unique state value
+    scope = 'user-read-private user-read-email'
+    return redirect(f'https://accounts.spotify.com/authorize?response_type=code&client_id={client_id}&scope={scope}&redirect_uri={redirect_uri}&state={state}')
 
 @app.route('/callback')
 def callback():
