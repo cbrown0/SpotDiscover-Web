@@ -56,6 +56,10 @@ def callback():
     
     access_token = response_data['access_token']
     
+    # Test code for output
+    # user_country = get_user_market(access_token)
+    # print(user_country)
+    
     # Fetch user profile
     profile_response = requests.get('https://api.spotify.com/v1/me', headers={'Authorization': 'Bearer ' + access_token})
     profile_data = profile_response.json()
@@ -144,6 +148,17 @@ def get_top_tracks(access_token):
     else:
         return None
 
+def get_user_market(access_token):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    response = requests.get('https://api.spotify.com/v1/me', headers=headers)
+    if response.status_code == 200:
+        user_data = response.json()
+        country = user_data.get('country')
+        return country
+    else:
+        return None
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5543)
