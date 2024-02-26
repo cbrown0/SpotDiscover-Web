@@ -7,11 +7,16 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="container" style="width: {{ token_length }}px;">
+    <div class="container">
         <h1>SpotDiscover Daily Playlist Generator</h1>
         <p>Authorization successful!</p>
         <p>Welcome back, <strong>{{ display_name }}</strong>!</p>
         <p>Your access token is: <code>{{ access_token }}</code></p>
+        <!-- Form to generate playlist -->
+        <form action="/generate_playlist" method="POST">
+            <input type="hidden" name="access_token" value="{{ access_token }}">
+            <button type="submit" class="button">Generate Playlist</button>
+        </form>
     </div>
 </body>
 </html>
