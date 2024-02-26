@@ -113,6 +113,37 @@ def generate_playlist():
             return 'Failed to create playlist'
     else:
         return 'Failed to get user ID'
+    
+def get_top_artists(access_token):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    params = {
+        'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
+        'limit': 2  # Adjust the limit as needed
+    }
+    response = requests.get('https://api.spotify.com/v1/me/top/artists', headers=headers, params=params)
+    if response.status_code == 200:
+        top_artists = [(artist['id']) for artist in response.json()['items']]
+        return top_artists
+    else:
+        return None
+    
+def get_top_tracks(access_token):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    params = {
+        'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
+        'limit': 3  # Adjust the limit as needed
+    }
+    response = requests.get('https://api.spotify.com/v1/me/top/tracks', headers=headers, params=params)
+    if response.status_code == 200:
+        top_tracks = [(track['id']) for track in response.json()['items']]
+        return top_tracks
+    else:
+        return None
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5543)
