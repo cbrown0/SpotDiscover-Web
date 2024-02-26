@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Callback - Spotify Playlist Generator</title>
+    <title>SpotDiscover</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="container" style="width: {{ token_length }}px;">
-        <h1>Callback - Spotify Playlist Generator</h1>
+        <h1>SpotDiscover Daily Playlist Generator</h1>
         <p>Authorization successful!</p>
         <p>Welcome back, <strong>{{ display_name }}</strong>!</p>
         <p>Your access token is: <code>{{ access_token }}</code></p>
-        <p>Feel free to close this page and return to the Spotify Playlist Generator.</p>
     </div>
 </body>
 </html>
