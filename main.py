@@ -25,7 +25,7 @@ def login():
 @app.route('/authorize')
 def authorize():
     state = 'your_state'  # Generate a unique state value
-    scope = 'user-read-private user-read-email'
+    scope = 'user-read-private user-read-email user-top-read playlist-modify-public playlist-modify-private'
     return redirect(f'https://accounts.spotify.com/authorize?response_type=code&client_id={client_id}&scope={scope}&redirect_uri={redirect_uri}&state={state}')
 
 @app.route('/callback')
@@ -50,6 +50,7 @@ def callback():
         'redirect_uri': redirect_uri
     }
     
+    # Get token
     response = requests.post('https://accounts.spotify.com/api/token', headers=headers, data=data)
     response_data = response.json()
     
