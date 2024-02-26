@@ -62,7 +62,8 @@ def callback():
     
     display_name = profile_data.get('display_name', 'Unknown')
     
-    return f'Hello, {display_name}! Your access token is: {access_token}'
+    return render_template('callback.html', display_name=display_name, access_token=access_token)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5543)

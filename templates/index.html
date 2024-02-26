@@ -4,10 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spotify Playlist Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <h1>Welcome to the Spotify Playlist Generator</h1>
-    <p>To get started, click the button below to authorize your Spotify account:</p>
-    <a href="/login"><button>Authorize</button></a>
+    <div class="container">
+        <h1>Welcome to the Spotify Playlist Generator</h1>
+        <p>To get started, click the button below to authorize your Spotify account:</p>
+        <a href="/login"><button>Authorize</button></a>
+    </div>
 </body>
 </html>
