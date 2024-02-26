@@ -57,8 +57,11 @@ def callback():
     access_token = response_data['access_token']
     
     # Test code for output
-    # user_country = get_user_market(access_token)
-    # print(user_country)
+    seed_artists = get_top_artists(access_token)
+    seed_tracks = get_top_tracks(access_token)
+    market = get_user_market(access_token)
+    recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+    
     
     # Fetch user profile
     profile_response = requests.get('https://api.spotify.com/v1/me', headers={'Authorization': 'Bearer ' + access_token})
@@ -112,6 +115,11 @@ def generate_playlist():
         playlist_id = create_playlist(access_token, user_id, playlist_name)
         
         if playlist_id:
+            seed_artists = get_top_artists(access_token)
+            seed_tracks = get_top_tracks(access_token)
+            market = get_user_market(access_token)
+            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+            add_recommendations_to_playlist(access_token, playlist_id, recommendations)
             return 'Playlist created successfully!'
         else:
             return 'Failed to create playlist'
@@ -159,6 +167,86 @@ def get_user_market(access_token):
         return country
     else:
         return None
+    
+def get_recommendations(access_token, seed_artists, seed_tracks, market, limit=30):
+    # Construct the request URL
+    url = 'https://api.spotify.com/v1/recommendations'
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    params = {
+        'limit': limit,
+        'market': market,
+        'seed_artists': seed_artists,
+        'seed_tracks': seed_tracks
+    }
+
+    # Send the request to Spotify API
+    response = requests.get(url, headers=headers, params=params)
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Parse the response and extract recommended tracks
+        recommendations = response.json()['tracks']
+        recommended_tracks = [track['name'] for track in recommendations]
+        return recommended_tracks
+    else:
+        # Handle errors if the request fails
+        print("Failed to get recommendations:", response.status_code)
+        return None
+    
+def add_recommendations_to_playlist(access_token, playlist_id, recommendations):
+    # Convert track names to track URIs
+    track_uris = []
+    for track_name in recommendations:
+        track_uri = get_track_uri(access_token, track_name)
+        if track_uri:
+            track_uris.append(track_uri)
+
+    # Add the track URIs to the playlist
+    if track_uris:
+        added = add_tracks_to_playlist(access_token, playlist_id, track_uris)
+        if added:
+            return 'Recommendations added to playlist successfully!'
+        else:
+            return 'Failed to add recommendations to playlist'
+    else:
+        return 'No recommendations found'
+
+
+def get_track_uri(access_token, track_name):
+    # Search for the track using its name
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    params = {
+        'q': track_name,
+        'type': 'track',
+        'limit': 1
+    }
+    response = requests.get('https://api.spotify.com/v1/search', headers=headers, params=params)
+    if response.status_code == 200:
+        # Extract the track URI from the response
+        items = response.json()['tracks']['items']
+        if items:
+            track_uri = items[0]['uri']
+            return track_uri
+    return None
+
+def add_tracks_to_playlist(access_token, playlist_id, track_uris):
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    params = {
+        'uris': track_uris
+    }
+    response = requests.post(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers, json=params)
+    if response.status_code == 201:
+        return True
+    else:
+        return False
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5543)
