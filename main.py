@@ -64,6 +64,55 @@ def callback():
     
     return render_template('callback.html', display_name=display_name, access_token=access_token)
 
+def get_user_id(access_token):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    response = requests.get('https://api.spotify.com/v1/me', headers=headers)
+    if response.status_code == 200:
+        user_id = response.json()['id']
+        return user_id
+    else:
+        return None
+
+def create_playlist(access_token, user_id, playlist_name):
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    data = {
+        'name': playlist_name,
+        'public': False  # Change to True if you want the playlist to be public
+    }
+    url = f'https://api.spotify.com/v1/users/{user_id}/playlists'
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 201:
+        playlist_id = response.json()['id']
+        return playlist_id
+    else:
+        return None
+
+
+@app.route('/generate_playlist', methods=['POST'])
+def generate_playlist():
+    access_token = request.form.get('access_token')
+    
+    # Get the current user's user ID
+    user_id = get_user_id(access_token)
+    
+    if user_id:
+        # Hardcode the playlist name for now
+        playlist_name = "SpotDiscover"
+        
+        # Create the empty playlist
+        playlist_id = create_playlist(access_token, user_id, playlist_name)
+        
+        if playlist_id:
+            return 'Playlist created successfully!'
+        else:
+            return 'Failed to create playlist'
+    else:
+        return 'Failed to get user ID'
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5543)
