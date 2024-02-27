@@ -13,8 +13,8 @@ app = Flask(__name__)
 load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
-client_secret = os.getenv("CLIENT_Secret")
-redirect_uri = "http://192.168.0.195:5543/callback"
+client_secret = os.getenv("CLIENT_SECRET")
+redirect_uri = "http://192.168.0.187:5543/callback"
 
 # Define your global variables here
 access_token = None
@@ -63,13 +63,6 @@ def callback():
     response_data = response.json()
     
     access_token = response_data['access_token']
-    
-    # Test code for output
-    seed_artists = get_top_artists(access_token)
-    seed_tracks = get_top_tracks(access_token)
-    market = get_user_market(access_token)
-    recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
-    
     
     # Fetch user profile
     profile_response = requests.get('https://api.spotify.com/v1/me', headers={'Authorization': 'Bearer ' + access_token})
