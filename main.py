@@ -321,19 +321,6 @@ def get_playlist_id(access_token, user_id, playlist_name):
             if playlist['name'] == playlist_name:
                 return playlist['id']
     return None
-
-# Function to clear out existing tracks from the playlist
-def clear_playlist(access_token, playlist_id):
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
-    response = requests.put(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers, json={'tracks': []})
-    if response.status_code == 200:
-        return True
-    else:
-        print("Failed to clear playlist:", response.status_code)
-        return False
     
 def get_user_playlists(access_token, user_id):
     headers = {
