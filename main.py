@@ -3,6 +3,9 @@ from flask import Flask, request, redirect, render_template, url_for
 import requests
 import os
 import base64
+import threading
+import time
+import schedule
 import json
 
 app = Flask(__name__)
@@ -11,7 +14,12 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_Secret")
-redirect_uri = "http://192.168.0.195:5543/callback" # remember to change this to pi IPV4 address when ready for deployment
+redirect_uri = "http://192.168.0.195:5543/callback"
+
+# Define your global variables here
+access_token = None
+playlist_id = None
+
 
 @app.route('/')
 def index():
@@ -89,7 +97,7 @@ def create_playlist(access_token, user_id, playlist_name):
     }
     data = {
         'name': playlist_name,
-        'public': False  # Change to True if you want the playlist to be public
+        'public': True  # Change to True if you want the playlist to be public
     }
     url = f'https://api.spotify.com/v1/users/{user_id}/playlists'
     response = requests.post(url, headers=headers, json=data)
@@ -102,6 +110,8 @@ def create_playlist(access_token, user_id, playlist_name):
 
 @app.route('/generate_playlist', methods=['POST'])
 def generate_playlist():
+    global access_token, playlist_id
+    
     access_token = request.form.get('access_token')
     
     # Get the current user's user ID
@@ -120,7 +130,15 @@ def generate_playlist():
             market = get_user_market(access_token)
             recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
             add_recommendations_to_playlist(access_token, playlist_id, recommendations)
-            return 'Playlist created successfully!'
+            
+            # Schedule the refresh_playlist function to run every minute
+            schedule.every(1).minutes.do(lambda: refresh_playlist(access_token, playlist_id))
+            
+            # Start a new thread to run the scheduling loop
+            refresh_thread = threading.Thread(target=refresh_playlist_thread)
+            refresh_thread.start()
+            
+            return 'Playlist created successfully and scheduled for refresh!'
         else:
             return 'Failed to create playlist'
     else:
@@ -244,6 +262,117 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
     }
     response = requests.post(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers, json=params)
     if response.status_code == 201:
+        return True
+    else:
+        return False
+    
+def refresh_playlist_thread():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+    
+def refresh_playlist(access_token, playlist_id):
+    print("Starting refresh...")
+    
+    # Get the current user's user ID
+    user_id = get_user_id(access_token)
+    
+    if user_id:
+        # Hardcode the playlist name for now
+        playlist_name = "SpotDiscover"
+        
+        # Check if the playlist already exists
+        existing_playlist_id = get_playlist_id(access_token, user_id, playlist_name)
+        
+        if existing_playlist_id:
+            # Get the tracks currently in the playlist
+            current_tracks = get_playlist_tracks(access_token, existing_playlist_id)
+            
+            # Remove existing tracks from the playlist
+            if current_tracks:
+                remove_tracks_from_playlist(access_token, existing_playlist_id, current_tracks)
+                print("Existing tracks removed from the playlist")
+            
+            # Get new recommendations and add them to the playlist
+            seed_artists = get_top_artists(access_token)
+            seed_tracks = get_top_tracks(access_token)
+            market = get_user_market(access_token)
+            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+            add_recommendations_to_playlist(access_token, existing_playlist_id, recommendations)
+            print("Playlist successfully refreshed!")
+            
+            return 'Playlist refreshed successfully!'
+        else:
+            print("Playlist does not exist")
+            return 'Playlist does not exist'
+    else:
+        print("Failed to get user ID")
+        return 'Failed to get user ID'
+
+# Function to get the playlist ID if it already exists
+def get_playlist_id(access_token, user_id, playlist_name):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    response = requests.get(f'https://api.spotify.com/v1/me/playlists', headers=headers)
+    if response.status_code == 200:
+        playlists = response.json()['items']
+        for playlist in playlists:
+            if playlist['name'] == playlist_name:
+                return playlist['id']
+    return None
+
+# Function to clear out existing tracks from the playlist
+def clear_playlist(access_token, playlist_id):
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    response = requests.put(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers, json={'tracks': []})
+    if response.status_code == 200:
+        return True
+    else:
+        print("Failed to clear playlist:", response.status_code)
+        return False
+    
+def get_user_playlists(access_token, user_id):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    params = {
+        'limit': 50  # Adjust the limit as needed
+    }
+    response = requests.get(f'https://api.spotify.com/v1/users/{user_id}/playlists', headers=headers, params=params)
+    if response.status_code == 200:
+        playlists_data = response.json().get('items', [])
+        playlists = [{'id': playlist['id'], 'name': playlist['name']} for playlist in playlists_data]
+        return playlists
+    else:
+        print("Failed to retrieve user playlists:", response.status_code)
+        return None
+    
+def get_playlist_tracks(access_token, playlist_id):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    response = requests.get(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers)
+    if response.status_code == 200:
+        tracks = response.json()['items']
+        track_uris = [track['track']['uri'] for track in tracks]
+        return track_uris
+    else:
+        return None
+    
+def remove_tracks_from_playlist(access_token, playlist_id, track_uris):
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    data = {
+        'tracks': [{'uri': uri} for uri in track_uris]
+    }
+    response = requests.delete(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers, json=data)
+    if response.status_code == 200:
         return True
     else:
         return False
