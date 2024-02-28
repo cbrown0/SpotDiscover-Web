@@ -6,6 +6,7 @@ import base64
 import threading
 import time
 import schedule
+import datetime
 import json
 
 app = Flask(__name__)
@@ -14,7 +15,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.187:5543/callback"
+redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
@@ -124,12 +125,21 @@ def generate_playlist():
             recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
             add_recommendations_to_playlist(access_token, playlist_id, recommendations)
             
-            # Schedule the refresh_playlist function to run every minute
-            schedule.every(1).minutes.do(lambda: refresh_playlist(access_token, playlist_id))
+            # Calculate time until next midnight
+            now = datetime.datetime.now()
+            midnight = datetime.datetime.combine(now.date(), datetime.time(0))
+            time_until_midnight = (midnight - now).seconds
+            
+            # Schedule the refresh_playlist function to run every night at midnight
+            schedule.every().day.at("00:00").do(lambda: refresh_playlist(access_token, playlist_id)).tag('midnight_refresh')
             
             # Start a new thread to run the scheduling loop
             refresh_thread = threading.Thread(target=refresh_playlist_thread)
             refresh_thread.start()
+            
+            # Run pending jobs and sleep until next midnight
+            schedule.run_pending()
+            time.sleep(time_until_midnight)
             
             return 'Playlist created successfully and scheduled for refresh!'
         else:
