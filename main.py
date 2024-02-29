@@ -73,6 +73,39 @@ def callback():
     
     return render_template('callback.html', display_name=display_name, access_token=access_token)
 
+@app.route('/generate_playlist', methods=['POST'])
+def generate_playlist():
+    global access_token, playlist_id
+    
+    access_token = request.form.get('access_token')
+    
+    # Get the current user's user ID
+    user_id = get_user_id(access_token)
+    
+    if user_id:
+        # Hardcode the playlist name for now
+        playlist_name = "SpotDiscover"
+        
+        # Create the empty playlist
+        playlist_id = create_playlist(access_token, user_id, playlist_name)
+        
+        if playlist_id:  # Check if playlist ID was made
+            seed_artists = get_top_artists(access_token)
+            seed_tracks = get_top_tracks(access_token)
+            market = get_user_market(access_token)
+            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+            add_recommendations_to_playlist(access_token, playlist_id, recommendations)
+
+            return redirect(url_for('successful_generate'))
+        else:
+            return 'Failed to create playlist'
+    else:
+        return 'Failed to get user ID'
+    
+@app.route('/successful_generate')
+def successful_generate():
+    return render_template('successful_generate.html')
+    
 def get_user_id(access_token):
     headers = {
         'Authorization': f'Bearer {access_token}'
@@ -102,37 +135,6 @@ def create_playlist(access_token, user_id, playlist_name):
         print("Failed to create playlist:", response.status_code, response.content)  # Print response content
         return None
 
-
-@app.route('/generate_playlist', methods=['POST'])
-def generate_playlist():
-    global access_token, playlist_id
-    
-    access_token = request.form.get('access_token')
-    
-    # Get the current user's user ID
-    user_id = get_user_id(access_token)
-    
-    if user_id:
-        # Hardcode the playlist name for now
-        playlist_name = "SpotDiscover"
-        
-        # Create the empty playlist
-        playlist_id = create_playlist(access_token, user_id, playlist_name)
-        
-        if playlist_id:  # Check if playlist ID was made
-            seed_artists = get_top_artists(access_token)
-            seed_tracks = get_top_tracks(access_token)
-            market = get_user_market(access_token)
-            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
-            add_recommendations_to_playlist(access_token, playlist_id, recommendations)
-
-            return 'Playlist created successfully and scheduled for refresh!'
-        else:
-            return 'Failed to create playlist'
-    else:
-        return 'Failed to get user ID'
-
-    
 def get_top_artists(access_token):
     headers = {
         'Authorization': f'Bearer {access_token}'
