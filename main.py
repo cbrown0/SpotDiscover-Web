@@ -15,7 +15,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
@@ -95,10 +95,11 @@ def create_playlist(access_token, user_id, playlist_name):
     }
     url = f'https://api.spotify.com/v1/users/{user_id}/playlists'
     response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 201:
+    if response.status_code == 201 or 200: # For some reason response code is 200 instead of 201?
         playlist_id = response.json()['id']
         return playlist_id
     else:
+        print("Failed to create playlist:", response.status_code, response.content)  # Print response content
         return None
 
 
@@ -118,34 +119,16 @@ def generate_playlist():
         # Create the empty playlist
         playlist_id = create_playlist(access_token, user_id, playlist_name)
         
-        if playlist_id:
-            seed_artists = get_top_artists(access_token)
-            seed_tracks = get_top_tracks(access_token)
-            market = get_user_market(access_token)
-            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
-            add_recommendations_to_playlist(access_token, playlist_id, recommendations)
-            
-            # Calculate time until next midnight
-            now = datetime.datetime.now()
-            midnight = datetime.datetime.combine(now.date(), datetime.time(0))
-            time_until_midnight = (midnight - now).seconds
-            
-            # Schedule the refresh_playlist function to run every night at midnight
-            schedule.every().day.at("00:00").do(lambda: refresh_playlist(access_token, playlist_id)).tag('midnight_refresh')
-            
-            # Start a new thread to run the scheduling loop
-            refresh_thread = threading.Thread(target=refresh_playlist_thread)
-            refresh_thread.start()
-            
-            # Run pending jobs and sleep until next midnight
-            schedule.run_pending()
-            time.sleep(time_until_midnight)
-            
-            return 'Playlist created successfully and scheduled for refresh!'
-        else:
-            return 'Failed to create playlist'
+        seed_artists = get_top_artists(access_token)
+        seed_tracks = get_top_tracks(access_token)
+        market = get_user_market(access_token)
+        recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+        add_recommendations_to_playlist(access_token, playlist_id, recommendations)
+        
+        return 'Playlist created successfully and scheduled for refresh!'
     else:
         return 'Failed to get user ID'
+
     
 def get_top_artists(access_token):
     headers = {
