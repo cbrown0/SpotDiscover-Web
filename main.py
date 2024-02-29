@@ -78,6 +78,7 @@ def generate_playlist():
     global access_token, playlist_id
     
     access_token = request.form.get('access_token')
+    print("Access token in generate_playlist: ", access_token)
     
     # Get the current user's user ID
     user_id = get_user_id(access_token)
@@ -96,7 +97,7 @@ def generate_playlist():
             recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
             add_recommendations_to_playlist(access_token, playlist_id, recommendations)
 
-            return redirect(url_for('successful_generate'))
+            return redirect(url_for('successful_generate', access_token=access_token, playlist_id=playlist_id))
         else:
             return 'Failed to create playlist'
     else:
@@ -104,7 +105,30 @@ def generate_playlist():
     
 @app.route('/successful_generate')
 def successful_generate():
+    global access_token, playlist_id
+    
+    access_token = request.args.get('access_token')
+    print("Access token in successful_generate: ", access_token)
+    playlist_id = request.args.get('playlist_id')
+
+    # Start the scheduler after the playlist is successfully created
+    refresh_playlist_midnight(access_token, playlist_id)
+    
     return render_template('successful_generate.html')
+
+def refresh_playlist_midnight(access_token, playlist_id):
+    # Schedule the refresh_playlist function to run at midnight every night
+    schedule.every(1).minutes.do(refresh_playlist_job, access_token=access_token, playlist_id=playlist_id)
+
+    
+def refresh_playlist_job(access_token, playlist_id):
+    # This function will be called every minute to refresh the playlist
+    refresh_playlist(access_token, playlist_id)
+
+def scheduler_thread():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
     
 def get_user_id(access_token):
     headers = {
@@ -115,7 +139,10 @@ def get_user_id(access_token):
         user_id = response.json()['id']
         return user_id
     else:
+        print("Failed to get user ID. Status code:", response.status_code)
+        print("Response content:", response.content)
         return None
+
 
 def create_playlist(access_token, user_id, playlist_name):
     headers = {
@@ -257,11 +284,6 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
     else:
         return False
     
-def refresh_playlist_thread():
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-    
 def refresh_playlist(access_token, playlist_id):
     print("Starting refresh...")
     
@@ -354,6 +376,10 @@ def remove_tracks_from_playlist(access_token, playlist_id, track_uris):
         return True
     else:
         return False
+    
+# Start the scheduler in a separate thread
+scheduler_thread = threading.Thread(target=scheduler_thread)
+scheduler_thread.start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5543)
