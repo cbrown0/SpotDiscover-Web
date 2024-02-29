@@ -15,13 +15,11 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
 playlist_id = None
-playlist_exists = True
-
 
 @app.route('/')
 def index():
@@ -116,10 +114,8 @@ def successful_generate():
     return render_template('successful_generate.html')
 
 def refresh_playlist_midnight(access_token, playlist_id):
-    global playlist_exists
     # Schedule the refresh_playlist function to run at midnight every night
-    if playlist_exists:
-        schedule.every(1).minutes.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id)
+    schedule.every(1).minutes.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id)
 
 def scheduler_thread():
     while True:
@@ -281,7 +277,6 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
         return False
     
 def refresh_playlist(access_token, playlist_id):
-    global playlist_exists
     print("Starting refresh...")
     
     # Get the current user's user ID
@@ -314,7 +309,6 @@ def refresh_playlist(access_token, playlist_id):
             return 'Playlist refreshed successfully!'
         else:
             print("Playlist does not exist")
-            playlist_exists = False  # Set playlist_exists to False
             return schedule.CancelJob
 
 # Function to get the playlist ID if it already exists
