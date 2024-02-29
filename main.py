@@ -119,13 +119,16 @@ def generate_playlist():
         # Create the empty playlist
         playlist_id = create_playlist(access_token, user_id, playlist_name)
         
-        seed_artists = get_top_artists(access_token)
-        seed_tracks = get_top_tracks(access_token)
-        market = get_user_market(access_token)
-        recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
-        add_recommendations_to_playlist(access_token, playlist_id, recommendations)
-        
-        return 'Playlist created successfully and scheduled for refresh!'
+        if playlist_id:  # Check if playlist ID was made
+            seed_artists = get_top_artists(access_token)
+            seed_tracks = get_top_tracks(access_token)
+            market = get_user_market(access_token)
+            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+            add_recommendations_to_playlist(access_token, playlist_id, recommendations)
+
+            return 'Playlist created successfully and scheduled for refresh!'
+        else:
+            return 'Failed to create playlist'
     else:
         return 'Failed to get user ID'
 
