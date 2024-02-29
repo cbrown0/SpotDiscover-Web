@@ -112,28 +112,14 @@ def successful_generate():
 
     # Start the scheduler after the playlist is successfully created
     refresh_playlist_midnight(access_token, playlist_id)
-    
+
     return render_template('successful_generate.html')
 
 def refresh_playlist_midnight(access_token, playlist_id):
     global playlist_exists
     # Schedule the refresh_playlist function to run at midnight every night
     if playlist_exists:
-        schedule.every(1).minutes.do(refresh_playlist_job, access_token=access_token, playlist_id=playlist_id)
-
-    
-def refresh_playlist_job(access_token, playlist_id):
-    global playlist_exists
-    # This function will be called every minute to refresh the playlist if the playlist still exists
-    if playlist_exists is True:
-        refresh_playlist(access_token, playlist_id)
-    else:
-        # Get the job from the schedule and clear it
-        print("Playlist doesn't exist deleting schedule")
-        for job in schedule.get_jobs():
-            if job.job_func == refresh_playlist_job:
-                schedule.cancel_job(job)
-                break
+        schedule.every(1).minutes.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id)
 
 def scheduler_thread():
     while True:
@@ -329,10 +315,7 @@ def refresh_playlist(access_token, playlist_id):
         else:
             print("Playlist does not exist")
             playlist_exists = False  # Set playlist_exists to False
-            return playlist_exists
-    else:
-        print("Failed to get user ID")
-        return 'Failed to get user ID'
+            return schedule.CancelJob
 
 # Function to get the playlist ID if it already exists
 def get_playlist_id(access_token, user_id, playlist_name):
