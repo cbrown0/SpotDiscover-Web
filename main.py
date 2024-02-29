@@ -20,6 +20,7 @@ redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different h
 # Define your global variables here
 access_token = None
 playlist_id = None
+playlist_exists = True
 
 
 @app.route('/')
@@ -78,7 +79,6 @@ def generate_playlist():
     global access_token, playlist_id
     
     access_token = request.form.get('access_token')
-    print("Access token in generate_playlist: ", access_token)
     
     # Get the current user's user ID
     user_id = get_user_id(access_token)
@@ -108,7 +108,6 @@ def successful_generate():
     global access_token, playlist_id
     
     access_token = request.args.get('access_token')
-    print("Access token in successful_generate: ", access_token)
     playlist_id = request.args.get('playlist_id')
 
     # Start the scheduler after the playlist is successfully created
@@ -117,13 +116,24 @@ def successful_generate():
     return render_template('successful_generate.html')
 
 def refresh_playlist_midnight(access_token, playlist_id):
+    global playlist_exists
     # Schedule the refresh_playlist function to run at midnight every night
-    schedule.every(1).minutes.do(refresh_playlist_job, access_token=access_token, playlist_id=playlist_id)
+    if playlist_exists:
+        schedule.every(1).minutes.do(refresh_playlist_job, access_token=access_token, playlist_id=playlist_id)
 
     
 def refresh_playlist_job(access_token, playlist_id):
-    # This function will be called every minute to refresh the playlist
-    refresh_playlist(access_token, playlist_id)
+    global playlist_exists
+    # This function will be called every minute to refresh the playlist if the playlist still exists
+    if playlist_exists is True:
+        refresh_playlist(access_token, playlist_id)
+    else:
+        # Get the job from the schedule and clear it
+        print("Playlist doesn't exist deleting schedule")
+        for job in schedule.get_jobs():
+            if job.job_func == refresh_playlist_job:
+                schedule.cancel_job(job)
+                break
 
 def scheduler_thread():
     while True:
@@ -285,6 +295,7 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
         return False
     
 def refresh_playlist(access_token, playlist_id):
+    global playlist_exists
     print("Starting refresh...")
     
     # Get the current user's user ID
@@ -317,7 +328,8 @@ def refresh_playlist(access_token, playlist_id):
             return 'Playlist refreshed successfully!'
         else:
             print("Playlist does not exist")
-            return 'Playlist does not exist'
+            playlist_exists = False  # Set playlist_exists to False
+            return playlist_exists
     else:
         print("Failed to get user ID")
         return 'Failed to get user ID'
