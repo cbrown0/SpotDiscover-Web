@@ -15,7 +15,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
@@ -115,7 +115,7 @@ def successful_generate():
 
 def refresh_playlist_midnight(access_token, playlist_id):
     # Schedule the refresh_playlist function to run at midnight every night
-    schedule.every(1).minutes.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id)
+    schedule.every(5).hours.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id)
 
 def scheduler_thread():
     while True:
