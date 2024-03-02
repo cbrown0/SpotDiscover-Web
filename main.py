@@ -119,7 +119,7 @@ def successful_generate():
 
 def refresh_playlist_midnight(access_token, playlist_id, refresh_token):
     # Schedule the refresh_playlist function to run at midnight every night
-    schedule.every(1).minute.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
+    schedule.every().day.at("00:00").do(refresh_playlist, access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
 
 def scheduler_thread():
     while True:
@@ -282,11 +282,13 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
     
 def refresh_playlist(access_token, playlist_id, refresh_token):
     print("Starting refresh...")
-    # Get the current user's user ID
-    user_id = get_user_id(access_token)
     
     if is_token_expired(access_token):
         access_token = refresh_access_token(refresh_token)
+        print("Access token expired and has been refreshed")
+        
+    # Get the current user's user ID
+    user_id = get_user_id(access_token)
 
     if user_id:
         # Hardcode the playlist name for now
@@ -324,7 +326,6 @@ def is_token_expired(access_token):
   return response.status_code == 401
 
 def refresh_access_token(refresh_token):
-    print("Refresh token in function is:", refresh_token)
     auth_str = f"{client_id}:{client_secret}"
     auth_b64 = base64.b64encode(auth_str.encode()).decode('utf-8')
 
@@ -341,10 +342,7 @@ def refresh_access_token(refresh_token):
     response = requests.post('https://accounts.spotify.com/api/token', data=data, headers=headers) #sends request off to spotify
 
     if(response.status_code == 200): #checks if request was valid
-        print("The request to went through we got a status 200; Spotify token refreshed")
         response_json = response.json()
-        new_expire = response_json['expires_in']
-        print("the time left on new token is: "+ str(new_expire / 60) + "min") #says how long
         return response_json["access_token"]
     else:
         print("ERROR! The response we got was: "+ str(response))
