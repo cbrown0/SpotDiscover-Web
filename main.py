@@ -19,6 +19,7 @@ redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different h
 
 # Define your global variables here
 access_token = None
+refresh_token = None
 playlist_id = None
 
 @app.route('/')
@@ -38,6 +39,7 @@ def authorize():
 
 @app.route('/callback')
 def callback():
+    global access_token, refresh_token
     code = request.args.get('code')
     state = request.args.get('state')
     
@@ -63,6 +65,7 @@ def callback():
     response_data = response.json()
     
     access_token = response_data['access_token']
+    refresh_token = response_data['refresh_token']
     
     # Fetch user profile
     profile_response = requests.get('https://api.spotify.com/v1/me', headers={'Authorization': 'Bearer ' + access_token})
@@ -95,7 +98,7 @@ def generate_playlist():
             recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
             add_recommendations_to_playlist(access_token, playlist_id, recommendations)
 
-            return redirect(url_for('successful_generate', access_token=access_token, playlist_id=playlist_id))
+            return redirect(url_for('successful_generate', access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token))
         else:
             return 'Failed to create playlist'
     else:
@@ -103,19 +106,20 @@ def generate_playlist():
     
 @app.route('/successful_generate')
 def successful_generate():
-    global access_token, playlist_id
+    global access_token, playlist_id, refresh_token
     
     access_token = request.args.get('access_token')
     playlist_id = request.args.get('playlist_id')
-
+    refresh_token = request.args.get('refresh_token')
+    
     # Start the scheduler after the playlist is successfully created
-    refresh_playlist_midnight(access_token, playlist_id)
+    refresh_playlist_midnight(access_token, playlist_id, refresh_token)
 
     return render_template('successful_generate.html')
 
-def refresh_playlist_midnight(access_token, playlist_id):
+def refresh_playlist_midnight(access_token, playlist_id, refresh_token):
     # Schedule the refresh_playlist function to run at midnight every night
-    schedule.every(5).hours.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id)
+    schedule.every(1).minute.do(refresh_playlist, access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
 
 def scheduler_thread():
     while True:
@@ -276,12 +280,14 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
     else:
         return False
     
-def refresh_playlist(access_token, playlist_id):
+def refresh_playlist(access_token, playlist_id, refresh_token):
     print("Starting refresh...")
-    
     # Get the current user's user ID
     user_id = get_user_id(access_token)
     
+    if is_token_expired(access_token):
+        access_token = refresh_access_token(refresh_token)
+
     if user_id:
         # Hardcode the playlist name for now
         playlist_name = "SpotDiscover"
@@ -310,6 +316,38 @@ def refresh_playlist(access_token, playlist_id):
         else:
             print("Playlist does not exist")
             return schedule.CancelJob
+        
+def is_token_expired(access_token):
+  response = requests.get('https://api.spotify.com/v1/me', headers={
+    'Authorization': 'Bearer ' + access_token
+  })
+  return response.status_code == 401
+
+def refresh_access_token(refresh_token):
+    print("Refresh token in function is:", refresh_token)
+    auth_str = f"{client_id}:{client_secret}"
+    auth_b64 = base64.b64encode(auth_str.encode()).decode('utf-8')
+
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': f'Basic {auth_b64}'
+    }
+
+    data = {
+        'grant_type' : 'refresh_token',
+        'refresh_token' : refresh_token
+    }
+
+    response = requests.post('https://accounts.spotify.com/api/token', data=data, headers=headers) #sends request off to spotify
+
+    if(response.status_code == 200): #checks if request was valid
+        print("The request to went through we got a status 200; Spotify token refreshed")
+        response_json = response.json()
+        new_expire = response_json['expires_in']
+        print("the time left on new token is: "+ str(new_expire / 60) + "min") #says how long
+        return response_json["access_token"]
+    else:
+        print("ERROR! The response we got was: "+ str(response))
 
 # Function to get the playlist ID if it already exists
 def get_playlist_id(access_token, user_id, playlist_name):
