@@ -164,7 +164,8 @@ def get_top_artists(access_token):
     }
     params = {
         'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
-        'limit': 2  # Adjust the limit as needed
+        'limit': 3,  # Adjust the limit as needed
+        'offset': 30
     }
     response = requests.get('https://api.spotify.com/v1/me/top/artists', headers=headers, params=params)
     if response.status_code == 200:
@@ -179,7 +180,8 @@ def get_top_tracks(access_token):
     }
     params = {
         'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
-        'limit': 3  # Adjust the limit as needed
+        'limit': 5,  # Adjust the limit as needed
+        'offset': 30
     }
     response = requests.get('https://api.spotify.com/v1/me/top/tracks', headers=headers, params=params)
     if response.status_code == 200:
@@ -284,8 +286,8 @@ def refresh_playlist(access_token, playlist_id, refresh_token):
     print("Starting refresh...")
     
     if is_token_expired(access_token):
+        print("Access token expired attempting to refresh token...")
         access_token = refresh_access_token(refresh_token)
-        print("Access token expired and has been refreshed")
         
     # Get the current user's user ID
     user_id = get_user_id(access_token)
@@ -342,10 +344,11 @@ def refresh_access_token(refresh_token):
     response = requests.post('https://accounts.spotify.com/api/token', data=data, headers=headers) #sends request off to spotify
 
     if(response.status_code == 200): #checks if request was valid
+        print("Refresh token successfully refreshed")
         response_json = response.json()
         return response_json["access_token"]
     else:
-        print("ERROR! The response we got was: "+ str(response))
+        print("ERROR! Access token did not return 200 during refresh: "+ str(response))
 
 # Function to get the playlist ID if it already exists
 def get_playlist_id(access_token, user_id, playlist_name):
