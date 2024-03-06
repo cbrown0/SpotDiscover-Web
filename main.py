@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from flask import Flask, request, redirect, render_template, url_for, copy_current_request_context
+from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 import os
 import base64
@@ -113,19 +114,13 @@ def successful_generate():
     refresh_token = request.args.get('refresh_token')
     
     # Start the scheduler after the playlist is successfully created
-    refresh_playlist_midnight(access_token, playlist_id, refresh_token)
+    start_scheduler(access_token, playlist_id, refresh_token)
 
     return render_template('successful_generate.html')
 
-def refresh_playlist_midnight(access_token, playlist_id, refresh_token):
-    # Schedule the refresh_playlist function to run at midnight every night
-    #schedule.every().day.at("00:00").do(copy_current_request_context(refresh_playlist), access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
-    schedule.every(65).minutes.do(copy_current_request_context(refresh_playlist), access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
-
-def scheduler_thread():
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+def start_scheduler(access_token, playlist_id, refresh_token):
+    scheduler.add_job(refresh_playlist, 'interval', minutes=65, args=[access_token, playlist_id, refresh_token])
+    scheduler.start()
     
 def get_user_id(access_token):
     headers = {
@@ -407,9 +402,8 @@ def remove_tracks_from_playlist(access_token, playlist_id, track_uris):
     else:
         return False
     
-# Start the scheduler in a separate thread
-scheduler_thread = threading.Thread(target=scheduler_thread)
-scheduler_thread.start()
+# Scheduler using APScheduler
+scheduler = BackgroundScheduler()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5543)
