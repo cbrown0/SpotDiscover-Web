@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from flask import Flask, request, redirect, render_template, url_for
+from flask import Flask, request, redirect, render_template, url_for, copy_current_request_context
 import requests
 import os
 import base64
@@ -15,7 +15,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
@@ -119,7 +119,8 @@ def successful_generate():
 
 def refresh_playlist_midnight(access_token, playlist_id, refresh_token):
     # Schedule the refresh_playlist function to run at midnight every night
-    schedule.every().day.at("00:00").do(refresh_playlist, access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
+    #schedule.every().day.at("00:00").do(copy_current_request_context(refresh_playlist), access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
+    schedule.every(65).minutes.do(copy_current_request_context(refresh_playlist), access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token)
 
 def scheduler_thread():
     while True:
@@ -164,7 +165,7 @@ def get_top_artists(access_token):
     }
     params = {
         'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
-        'limit': 3,  # Adjust the limit as needed
+        'limit': 2,  # Adjust the limit as needed
         'offset': 30
     }
     response = requests.get('https://api.spotify.com/v1/me/top/artists', headers=headers, params=params)
@@ -180,7 +181,7 @@ def get_top_tracks(access_token):
     }
     params = {
         'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
-        'limit': 5,  # Adjust the limit as needed
+        'limit': 3,  # Adjust the limit as needed
         'offset': 30
     }
     response = requests.get('https://api.spotify.com/v1/me/top/tracks', headers=headers, params=params)
@@ -283,43 +284,44 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
         return False
     
 def refresh_playlist(access_token, playlist_id, refresh_token):
-    print("Starting refresh...")
+    with app.app_context():
+        print("Starting refresh...")
     
-    if is_token_expired(access_token):
-        print("Access token expired attempting to refresh token...")
-        access_token = refresh_access_token(refresh_token)
+        if is_token_expired(access_token):
+            print("Access token expired attempting to refresh token...")
+            access_token = refresh_access_token(refresh_token)
         
-    # Get the current user's user ID
-    user_id = get_user_id(access_token)
+        # Get the current user's user ID
+        user_id = get_user_id(access_token)
 
-    if user_id:
-        # Hardcode the playlist name for now
-        playlist_name = "SpotDiscover"
+        if user_id:
+            # Hardcode the playlist name for now
+            playlist_name = "SpotDiscover"
         
-        # Check if the playlist already exists
-        existing_playlist_id = get_playlist_id(access_token, user_id, playlist_name)
+            # Check if the playlist already exists
+            existing_playlist_id = get_playlist_id(access_token, user_id, playlist_name)
         
-        if existing_playlist_id:
-            # Get the tracks currently in the playlist
-            current_tracks = get_playlist_tracks(access_token, existing_playlist_id)
+            if existing_playlist_id:
+                # Get the tracks currently in the playlist
+                current_tracks = get_playlist_tracks(access_token, existing_playlist_id)
             
-            # Remove existing tracks from the playlist
-            if current_tracks:
-                remove_tracks_from_playlist(access_token, existing_playlist_id, current_tracks)
-                print("Existing tracks removed from the playlist")
+                # Remove existing tracks from the playlist
+                if current_tracks:
+                    remove_tracks_from_playlist(access_token, existing_playlist_id, current_tracks)
+                    print("Existing tracks removed from the playlist")
             
-            # Get new recommendations and add them to the playlist
-            seed_artists = get_top_artists(access_token)
-            seed_tracks = get_top_tracks(access_token)
-            market = get_user_market(access_token)
-            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
-            add_recommendations_to_playlist(access_token, existing_playlist_id, recommendations)
-            print("Playlist successfully refreshed!")
+                # Get new recommendations and add them to the playlist
+                seed_artists = get_top_artists(access_token)
+                seed_tracks = get_top_tracks(access_token)
+                market = get_user_market(access_token)
+                recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+                add_recommendations_to_playlist(access_token, existing_playlist_id, recommendations)
+                print("Playlist successfully refreshed!")
             
-            return 'Playlist refreshed successfully!'
-        else:
-            print("Playlist does not exist")
-            return schedule.CancelJob
+                return 'Playlist refreshed successfully!'
+            else:
+                print("Playlist does not exist")
+                return schedule.CancelJob
         
 def is_token_expired(access_token):
   response = requests.get('https://api.spotify.com/v1/me', headers={
