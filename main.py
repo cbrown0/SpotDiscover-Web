@@ -17,13 +17,12 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
 refresh_token = None
 playlist_id = None
-refresh_job_id = 'refresh_job'
 
 @app.route('/')
 def index():
@@ -109,22 +108,20 @@ def generate_playlist():
     
 @app.route('/successful_generate')
 def successful_generate():
-    global access_token, playlist_id, refresh_token, refresh_job_id
+    global access_token, playlist_id, refresh_token
     
     access_token = request.args.get('access_token')
     playlist_id = request.args.get('playlist_id')
     refresh_token = request.args.get('refresh_token')
     
     # Start the scheduler after the playlist is successfully created
-    job = start_scheduler(access_token, playlist_id, refresh_token)
-    job.id = refresh_job_id
+    start_scheduler(access_token, playlist_id, refresh_token)
 
-    return render_template('successful_generate.html', job_id=job.id)  # Extract the job ID from the job object
+    return render_template('successful_generate.html')  # Extract the job ID from the job object
 
 def start_scheduler(access_token, playlist_id, refresh_token):
-    job = scheduler.add_job(refresh_playlist, 'interval', minutes=1, args=[access_token, playlist_id, refresh_token])
+    scheduler.add_job(refresh_playlist, 'interval', minutes=1, id='refresh_job', args=[access_token, playlist_id, refresh_token])
     scheduler.start()
-    return job  # Return the job object instead of just the job ID
     
 def get_user_id(access_token):
     headers = {
@@ -284,7 +281,6 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
     
 def refresh_playlist(access_token, playlist_id, refresh_token):
     with app.app_context():
-        global refresh_job_id
         print("Starting refresh...")
     
         if is_token_expired(access_token):
@@ -318,12 +314,12 @@ def refresh_playlist(access_token, playlist_id, refresh_token):
                 add_recommendations_to_playlist(access_token, existing_playlist_id, recommendations)
                 print("Playlist successfully refreshed!")
             
-                return 'Playlist refreshed successfully!'
+                return
             else:
                 print("Playlist does not exist")
                 # Cancel the job if the playlist doesn't exist
-                scheduler.remove_job(refresh_job_id)
-                return 'Playlist does not exist'
+                scheduler.remove_job('refresh_job')
+                return
         
 def is_token_expired(access_token):
   response = requests.get('https://api.spotify.com/v1/me', headers={
