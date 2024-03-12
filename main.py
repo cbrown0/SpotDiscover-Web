@@ -2,14 +2,10 @@ from dotenv import load_dotenv
 from flask import Flask, request, redirect, render_template, url_for, copy_current_request_context
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.base import JobLookupError
+from apscheduler.triggers.cron import CronTrigger
 import requests
 import os
 import base64
-import threading
-import time
-import schedule
-import datetime
-import json
 
 app = Flask(__name__)
 
@@ -17,7 +13,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
@@ -120,7 +116,8 @@ def successful_generate():
     return render_template('successful_generate.html')  # Extract the job ID from the job object
 
 def start_scheduler(access_token, playlist_id, refresh_token):
-    scheduler.add_job(refresh_playlist, 'interval', minutes=1, id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    #scheduler.add_job(refresh_playlist, 'interval', minutes=65, id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id, refresh_token])
     scheduler.start()
     
 def get_user_id(access_token):
