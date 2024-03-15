@@ -104,20 +104,20 @@ def generate_playlist():
     
 @app.route('/successful_generate')
 def successful_generate():
-    global access_token, playlist_id, refresh_token
+    global access_token, refresh_token
     
     access_token = request.args.get('access_token')
-    playlist_id = request.args.get('playlist_id')
     refresh_token = request.args.get('refresh_token')
     
     # Start the scheduler after the playlist is successfully created
-    start_scheduler(access_token, playlist_id, refresh_token)
+    start_scheduler(access_token, refresh_token)
 
-    return render_template('successful_generate.html')  # Extract the job ID from the job object
+    return render_template('successful_generate.html')
 
-def start_scheduler(access_token, playlist_id, refresh_token):
-    #scheduler.add_job(refresh_playlist, 'interval', minutes=65, id='refresh_job', args=[access_token, playlist_id, refresh_token])
-    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id, refresh_token])
+def start_scheduler(access_token, refresh_token):
+    # For some reason scheduler add job with an interval instead of crontrigger doesn't properly refresh token
+    #scheduler.add_job(refresh_playlist, 'interval', minutes=240, id='refresh_job', args=[access_token, refresh_token])
+    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, refresh_token])
     scheduler.start()
     
 def get_user_id(access_token):
@@ -276,7 +276,7 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
     else:
         return False
     
-def refresh_playlist(access_token, playlist_id, refresh_token):
+def refresh_playlist(access_token, refresh_token):
     with app.app_context():
         print("Starting refresh...")
     
