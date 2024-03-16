@@ -6,6 +6,7 @@ from apscheduler.triggers.cron import CronTrigger
 import requests
 import os
 import base64
+import random
 
 app = Flask(__name__)
 
@@ -13,7 +14,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
@@ -156,14 +157,17 @@ def get_top_artists(access_token):
     headers = {
         'Authorization': f'Bearer {access_token}'
     }
+    # Generate a random offset between 0 and 45
+    random_offset = random.randint(0, 45)
     params = {
         'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
         'limit': 2,  # Adjust the limit as needed
-        'offset': 30
+        'offset': random_offset
     }
     response = requests.get('https://api.spotify.com/v1/me/top/artists', headers=headers, params=params)
     if response.status_code == 200:
         top_artists = [(artist['id']) for artist in response.json()['items']]
+        print("top artists offset is: ", random_offset)
         return top_artists
     else:
         return None
@@ -172,14 +176,17 @@ def get_top_tracks(access_token):
     headers = {
         'Authorization': f'Bearer {access_token}'
     }
+    # Generate a random offset between 0 and 45
+    random_offset = random.randint(0, 45)
     params = {
         'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
         'limit': 3,  # Adjust the limit as needed
-        'offset': 30
+        'offset': random_offset
     }
     response = requests.get('https://api.spotify.com/v1/me/top/tracks', headers=headers, params=params)
     if response.status_code == 200:
         top_tracks = [(track['id']) for track in response.json()['items']]
+        print("top tracks offset is: ", random_offset)
         return top_tracks
     else:
         return None
