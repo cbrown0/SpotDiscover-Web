@@ -299,7 +299,7 @@ def refresh_playlist(access_token, refresh_token):
             playlist_name = "SpotDiscover"
         
             # Check if the playlist already exists
-            existing_playlist_id = get_playlist_id(access_token, user_id, playlist_name)
+            existing_playlist_id = get_playlist_id(access_token, playlist_name)
         
             if existing_playlist_id:
                 # Get the tracks currently in the playlist
@@ -341,8 +341,8 @@ def refresh_access_token(refresh_token):
     }
 
     data = {
-        'grant_type' : 'refresh_token',
-        'refresh_token' : refresh_token
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token
     }
 
     response = requests.post('https://accounts.spotify.com/api/token', data=data, headers=headers) #sends request off to spotify
@@ -352,10 +352,11 @@ def refresh_access_token(refresh_token):
         response_json = response.json()
         return response_json["access_token"]
     else:
-        print("ERROR! Access token did not return 200 during refresh: "+ str(response))
+        print(f"ERROR! Access token did not return 200 during refresh: {response.status_code}")
+        print(f"Response content: {response.text}")  # Log the full response content
 
 # Function to get the playlist ID if it already exists
-def get_playlist_id(access_token, user_id, playlist_name):
+def get_playlist_id(access_token, playlist_name):
     headers = {
         'Authorization': f'Bearer {access_token}'
     }
