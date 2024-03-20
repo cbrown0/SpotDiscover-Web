@@ -14,7 +14,7 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.195:5543/callback" #Change this for different hosting pc
+redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
 
 # Define your global variables here
 access_token = None
@@ -105,20 +105,20 @@ def generate_playlist():
     
 @app.route('/successful_generate')
 def successful_generate():
-    global access_token, refresh_token
+    global access_token, playlist_id, refresh_token
     
     access_token = request.args.get('access_token')
+    playlist_id = request.args.get('playlist_id')
     refresh_token = request.args.get('refresh_token')
     
     # Start the scheduler after the playlist is successfully created
-    start_scheduler(access_token, refresh_token)
+    start_scheduler(access_token, playlist_id, refresh_token)
 
-    return render_template('successful_generate.html')
+    return render_template('successful_generate.html')  # Extract the job ID from the job object
 
-def start_scheduler(access_token, refresh_token):
-    # For some reason scheduler add job with an interval instead of crontrigger doesn't properly refresh token
-    #scheduler.add_job(refresh_playlist, 'interval', minutes=240, id='refresh_job', args=[access_token, refresh_token])
-    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, refresh_token])
+def start_scheduler(access_token, playlist_id, refresh_token):
+    scheduler.add_job(refresh_playlist, 'interval', minutes=120, id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    #scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id, refresh_token])
     scheduler.start()
     
 def get_user_id(access_token):
@@ -283,13 +283,21 @@ def add_tracks_to_playlist(access_token, playlist_id, track_uris):
     else:
         return False
     
-def refresh_playlist(access_token, refresh_token):
+def refresh_playlist(access_token, playlist_id, refresh_token):
     with app.app_context():
         print("Starting refresh...")
+        
+        print("Access token before refresh: ", refresh_token)
+        print("Refresh token before refresh:", refresh_token)
     
         if is_token_expired(access_token):
             print("Access token expired attempting to refresh token...")
             access_token = refresh_access_token(refresh_token)
+        
+        #Just for testing delete later
+        #access_token = refresh_access_token(refresh_token)
+        
+        print("Access token after refresh: ", access_token)
         
         # Get the current user's user ID
         user_id = get_user_id(access_token)
@@ -299,7 +307,7 @@ def refresh_playlist(access_token, refresh_token):
             playlist_name = "SpotDiscover"
         
             # Check if the playlist already exists
-            existing_playlist_id = get_playlist_id(access_token, playlist_name)
+            existing_playlist_id = get_playlist_id(access_token, user_id, playlist_name)
         
             if existing_playlist_id:
                 # Get the tracks currently in the playlist
@@ -341,8 +349,8 @@ def refresh_access_token(refresh_token):
     }
 
     data = {
-        'grant_type': 'refresh_token',
-        'refresh_token': refresh_token
+        'grant_type' : 'refresh_token',
+        'refresh_token' : refresh_token
     }
 
     response = requests.post('https://accounts.spotify.com/api/token', data=data, headers=headers) #sends request off to spotify
@@ -356,7 +364,7 @@ def refresh_access_token(refresh_token):
         print(f"Response content: {response.text}")  # Log the full response content
 
 # Function to get the playlist ID if it already exists
-def get_playlist_id(access_token, playlist_name):
+def get_playlist_id(access_token, user_id, playlist_name):
     headers = {
         'Authorization': f'Bearer {access_token}'
     }
