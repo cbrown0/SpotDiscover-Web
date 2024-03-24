@@ -287,7 +287,7 @@ def refresh_playlist(access_token, playlist_id, refresh_token):
     with app.app_context():
         print("Starting refresh...")
         
-        print("Access token before refresh: ", refresh_token)
+        print("Access token before refresh: ", access_token)
         print("Refresh token before refresh:", refresh_token)
     
         if is_token_expired(access_token):
