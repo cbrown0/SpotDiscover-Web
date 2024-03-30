@@ -18,8 +18,9 @@ app.secret_key = os.getenv("SECRET_KEY")
 redirect_uri = "http://192.168.0.195:5543/callback"  # Change this for different hosting pc
 
 # Define your global variables here
-sp_oauth = SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri, scope='user-read-private user-read-email playlist-modify-public playlist-modify-private')
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri, scope='user-read-private user-read-email playlist-modify-public playlist-modify-private'))
+scope = "user-read-private user-read-email playlist-modify-public playlist-modify-private user-top-read"
+sp_oauth = SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri, scope=scope)
+sp = spotipy.Spotify(auth_manager=sp_oauth)
 playlist_id = None
 
 @app.route('/')
@@ -92,24 +93,24 @@ def generate_playlist():
             return 'Failed to create playlist'
     else:
         return 'Failed to get user ID'
-    
-@app.route('/successful_generate')
+
+@app.route('/successful_generate')  # Add this line
 def successful_generate():
     global playlist_id
-    
-    user_data = sp.current_user()
-    access_token = sp.auth.token_info['access_token']
-    playlist_id = request.args.get('playlist_id')
 
-    start_scheduler(access_token, playlist_id)
+    user_data = sp.current_user()
+    access_token = session.get('access_token')  # Get access_token from session
+    playlist_id = request.args.get('playlist_id')
+    refresh_token = session.get('refresh_token')  # Get refresh_token from session
+
+    start_scheduler(access_token, playlist_id, refresh_token)
 
     return render_template('successful_generate.html')
 
 def start_scheduler(access_token, playlist_id, refresh_token):
-    #scheduler.add_job(refresh_playlist, 'interval', minutes=120, id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    # Remove refresh_token from the function signature
     print("Refresh Token in start_scheduler: ", refresh_token)
-    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id])
-    scheduler.start()
+    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id, refresh_token])
     
 def get_user_id(access_token):
     sp = spotipy.Spotify(auth=access_token)
@@ -177,6 +178,10 @@ def get_recommendations(access_token, seed_artists, seed_tracks, market, limit=3
         return None
     
 def add_recommendations_to_playlist(access_token, playlist_id, recommendations):
+    if recommendations is None:
+        print("Failed to fetch recommendations from Spotify")
+        return 'Failed to fetch recommendations from Spotify'
+
     sp = spotipy.Spotify(auth=access_token)
     track_uris = []
     for track_name in recommendations:
