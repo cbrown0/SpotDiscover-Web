@@ -78,13 +78,15 @@ def generate_playlist():
         # Hardcode the playlist name for now
         playlist_name = "SpotDiscover"
 
-        # Create the empty playlist
-        playlist_id = create_playlist(access_token, user_id, playlist_name)
+        # Get top artists and top tracks
+        seed_artists = get_top_artists(access_token)
+        seed_tracks = get_top_tracks(access_token)
+        market = get_user_market(access_token)
+
+        # Create the empty playlist with artists and tracks as description
+        playlist_id = create_playlist(access_token, user_id, playlist_name, seed_artists, seed_tracks)
 
         if playlist_id:
-            seed_artists = get_top_artists(access_token)
-            seed_tracks = get_top_tracks(access_token)
-            market = get_user_market(access_token)
             recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
             add_recommendations_to_playlist(access_token, playlist_id, recommendations)
 
@@ -123,10 +125,21 @@ def get_user_id(access_token):
         return None
 
 
-def create_playlist(access_token, user_id, playlist_name):
+def create_playlist(access_token, user_id, playlist_name, artists, tracks):
     sp = spotipy.Spotify(auth=access_token)
     try:
-        playlist_data = sp.user_playlist_create(user=user_id, name=playlist_name, public=True)
+        # Get the names of artists
+        artist_names = [sp.artist(artist)['name'] for artist in artists]
+        # Get the names of tracks
+        track_names = [sp.track(track)['name'] for track in tracks]
+
+        # Construct the playlist description
+        description = f"Recommendations based on top artists: {', '.join(artist_names)} and top tracks: {', '.join(track_names)}"
+
+        # Create the playlist with the provided name and description
+        playlist_data = sp.user_playlist_create(user=user_id, name=playlist_name, description=description, public=True)
+
+        # Retrieve the playlist ID from the response
         playlist_id = playlist_data['id']
         return playlist_id
     except spotipy.SpotifyException as e:
@@ -136,10 +149,11 @@ def create_playlist(access_token, user_id, playlist_name):
 def get_top_artists(access_token):
     sp = spotipy.Spotify(auth=access_token)
     try:
-        time_range = 'short_term'  # Change this to 'medium_term' or 'long_term' if needed
+        offset = random.randint(0, 50)  # Generate a random offset
         limit = 2  # Adjust the limit as needed
-        top_artists_data = sp.current_user_top_artists(time_range=time_range, limit=limit)
+        top_artists_data = sp.current_user_top_artists(time_range='short_term', limit=limit, offset=offset)
         top_artists = [artist['id'] for artist in top_artists_data['items']]
+        print("Offset for top artists:", offset)  # Print the offset to the console
         return top_artists
     except spotipy.SpotifyException as e:
         print("Failed to get top artists:", e)
@@ -148,10 +162,11 @@ def get_top_artists(access_token):
 def get_top_tracks(access_token):
     sp = spotipy.Spotify(auth=access_token)
     try:
-        time_range = 'short_term'  # Change this to 'medium_term' or 'long_term' if needed
+        offset = random.randint(0, 50)  # Generate a random offset
         limit = 3  # Adjust the limit as needed
-        top_tracks_data = sp.current_user_top_tracks(time_range=time_range, limit=limit)
+        top_tracks_data = sp.current_user_top_tracks(time_range='short_term', limit=limit, offset=offset)
         top_tracks = [track['id'] for track in top_tracks_data['items']]
+        print("Offset for top tracks:", offset)  # Print the offset to the console
         return top_tracks
     except spotipy.SpotifyException as e:
         print("Failed to get top tracks:", e)
@@ -167,7 +182,7 @@ def get_user_market(access_token):
         print("Failed to get user market:", e)
         return None
     
-def get_recommendations(access_token, seed_artists, seed_tracks, market, limit=30):
+def get_recommendations(access_token, seed_artists, seed_tracks, market, limit=31):
     sp = spotipy.Spotify(auth=access_token)
     try:
         recommendations = sp.recommendations(seed_artists=seed_artists, seed_tracks=seed_tracks, limit=limit, country=market)
@@ -184,7 +199,7 @@ def add_recommendations_to_playlist(access_token, playlist_id, recommendations):
 
     sp = spotipy.Spotify(auth=access_token)
     track_uris = []
-    for track_name in recommendations:
+    for track_name in recommendations[:30]:  # Add only the first 30 tracks
         track_uri = get_track_uri(sp, track_name)
         if track_uri:
             track_uris.append(track_uri)
