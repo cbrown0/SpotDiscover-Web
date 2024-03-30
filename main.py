@@ -1,12 +1,12 @@
 from dotenv import load_dotenv
-from flask import Flask, request, redirect, render_template, url_for, copy_current_request_context
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.jobstores.base import JobLookupError
+from flask import Flask, request, session, redirect, render_template, url_for
 from apscheduler.triggers.cron import CronTrigger
-import requests
+from apscheduler.schedulers.background import BackgroundScheduler
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 import os
-import base64
 import random
+import spotipy.oauth2 as oauth2
 
 app = Flask(__name__)
 
@@ -14,11 +14,12 @@ load_dotenv()
 
 client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
-redirect_uri = "http://192.168.0.187:5543/callback" #Change this for different hosting pc
+app.secret_key = os.getenv("SECRET_KEY")
+redirect_uri = "http://192.168.0.195:5543/callback"  # Change this for different hosting pc
 
 # Define your global variables here
-access_token = None
-refresh_token = None
+sp_oauth = SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri, scope='user-read-private user-read-email playlist-modify-public playlist-modify-private')
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri, scope='user-read-private user-read-email playlist-modify-public playlist-modify-private'))
 playlist_id = None
 
 @app.route('/')
@@ -32,65 +33,54 @@ def login():
 
 @app.route('/authorize')
 def authorize():
-    state = 'your_state'  # Generate a unique state value
-    scope = 'user-read-private user-read-email user-top-read playlist-modify-public playlist-modify-private'
-    return redirect(f'https://accounts.spotify.com/authorize?response_type=code&client_id={client_id}&scope={scope}&redirect_uri={redirect_uri}&state={state}')
+    state = 'your_state'  # Set your custom state value here
+    return redirect(sp.auth_manager.get_authorize_url(state=state))
 
 @app.route('/callback')
 def callback():
-    global access_token, refresh_token
+    global sp_oauth  # Declare sp_oauth as global to access the global variable
+
     code = request.args.get('code')
     state = request.args.get('state')
-    
+
     if state != 'your_state':  # Check if state matches
         return 'State mismatch error'
-    
-    auth_str = f"{client_id}:{client_secret}"
-    auth_b64 = base64.b64encode(auth_str.encode()).decode('utf-8')
-    
-    headers = {
-        'Authorization': f'Basic {auth_b64}',
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    
-    data = {
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': redirect_uri
-    }
-    
-    # Get token
-    response = requests.post('https://accounts.spotify.com/api/token', headers=headers, data=data)
-    response_data = response.json()
-    
-    access_token = response_data['access_token']
-    refresh_token = response_data['refresh_token']
-    
-    # Fetch user profile
-    profile_response = requests.get('https://api.spotify.com/v1/me', headers={'Authorization': 'Bearer ' + access_token})
-    profile_data = profile_response.json()
-    
+
+    # Exchange the authorization code for an access token
+    token_info = sp_oauth.get_access_token(code)
+    access_token = token_info['access_token']
+    refresh_token = token_info.get('refresh_token')
+
+    # Store the access token and refresh token in the session or database
+    session['access_token'] = access_token
+    if refresh_token:
+        session['refresh_token'] = refresh_token
+
+    # Use the access token to fetch user profile data
+    sp = spotipy.Spotify(auth=access_token)
+    profile_data = sp.current_user()
     display_name = profile_data.get('display_name', 'Unknown')
-    
+
     return render_template('callback.html', display_name=display_name, access_token=access_token)
 
 @app.route('/generate_playlist', methods=['POST'])
 def generate_playlist():
-    global access_token, playlist_id
-    
+    global access_token, playlist_id, refresh_token
+
     access_token = request.form.get('access_token')
-    
+    refresh_token = request.form.get('refresh_token')  # Assuming it's passed in the request
+
     # Get the current user's user ID
     user_id = get_user_id(access_token)
-    
+
     if user_id:
         # Hardcode the playlist name for now
         playlist_name = "SpotDiscover"
-        
+
         # Create the empty playlist
         playlist_id = create_playlist(access_token, user_id, playlist_name)
-        
-        if playlist_id:  # Check if playlist ID was made
+
+        if playlist_id:
             seed_artists = get_top_artists(access_token)
             seed_tracks = get_top_tracks(access_token)
             market = get_user_market(access_token)
@@ -105,318 +95,237 @@ def generate_playlist():
     
 @app.route('/successful_generate')
 def successful_generate():
-    global access_token, playlist_id, refresh_token
+    global playlist_id
     
-    access_token = request.args.get('access_token')
+    user_data = sp.current_user()
+    access_token = sp.auth.token_info['access_token']
     playlist_id = request.args.get('playlist_id')
-    refresh_token = request.args.get('refresh_token')
-    
-    # Start the scheduler after the playlist is successfully created
-    start_scheduler(access_token, playlist_id, refresh_token)
 
-    return render_template('successful_generate.html')  # Extract the job ID from the job object
+    start_scheduler(access_token, playlist_id)
+
+    return render_template('successful_generate.html')
 
 def start_scheduler(access_token, playlist_id, refresh_token):
-    scheduler.add_job(refresh_playlist, 'interval', minutes=120, id='refresh_job', args=[access_token, playlist_id, refresh_token])
-    #scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    #scheduler.add_job(refresh_playlist, 'interval', minutes=120, id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    print("Refresh Token in start_scheduler: ", refresh_token)
+    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id])
     scheduler.start()
     
 def get_user_id(access_token):
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    response = requests.get('https://api.spotify.com/v1/me', headers=headers)
-    if response.status_code == 200:
-        user_id = response.json()['id']
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        user_data = sp.current_user()
+        user_id = user_data['id']
         return user_id
-    else:
-        print("Failed to get user ID. Status code:", response.status_code)
-        print("Response content:", response.content)
+    except spotipy.SpotifyException as e:
+        print("Failed to get user ID:", e)
         return None
 
 
 def create_playlist(access_token, user_id, playlist_name):
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
-    data = {
-        'name': playlist_name,
-        'public': True  # Change to True if you want the playlist to be public
-    }
-    url = f'https://api.spotify.com/v1/users/{user_id}/playlists'
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 201 or 200: # For some reason response code is 200 instead of 201?
-        playlist_id = response.json()['id']
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        playlist_data = sp.user_playlist_create(user=user_id, name=playlist_name, public=True)
+        playlist_id = playlist_data['id']
         return playlist_id
-    else:
-        print("Failed to create playlist:", response.status_code, response.content)  # Print response content
+    except spotipy.SpotifyException as e:
+        print("Failed to create playlist:", e)
         return None
 
 def get_top_artists(access_token):
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    # Generate a random offset between 0 and 45
-    random_offset = random.randint(0, 45)
-    params = {
-        'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
-        'limit': 2,  # Adjust the limit as needed
-        'offset': random_offset
-    }
-    response = requests.get('https://api.spotify.com/v1/me/top/artists', headers=headers, params=params)
-    if response.status_code == 200:
-        top_artists = [(artist['id']) for artist in response.json()['items']]
-        print("top artists offset is: ", random_offset)
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        time_range = 'short_term'  # Change this to 'medium_term' or 'long_term' if needed
+        limit = 2  # Adjust the limit as needed
+        top_artists_data = sp.current_user_top_artists(time_range=time_range, limit=limit)
+        top_artists = [artist['id'] for artist in top_artists_data['items']]
         return top_artists
-    else:
+    except spotipy.SpotifyException as e:
+        print("Failed to get top artists:", e)
         return None
     
 def get_top_tracks(access_token):
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    # Generate a random offset between 0 and 45
-    random_offset = random.randint(0, 45)
-    params = {
-        'time_range': 'short_term',  # Change this to 'medium_term' or 'long_term' if needed
-        'limit': 3,  # Adjust the limit as needed
-        'offset': random_offset
-    }
-    response = requests.get('https://api.spotify.com/v1/me/top/tracks', headers=headers, params=params)
-    if response.status_code == 200:
-        top_tracks = [(track['id']) for track in response.json()['items']]
-        print("top tracks offset is: ", random_offset)
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        time_range = 'short_term'  # Change this to 'medium_term' or 'long_term' if needed
+        limit = 3  # Adjust the limit as needed
+        top_tracks_data = sp.current_user_top_tracks(time_range=time_range, limit=limit)
+        top_tracks = [track['id'] for track in top_tracks_data['items']]
         return top_tracks
-    else:
+    except spotipy.SpotifyException as e:
+        print("Failed to get top tracks:", e)
         return None
 
 def get_user_market(access_token):
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    response = requests.get('https://api.spotify.com/v1/me', headers=headers)
-    if response.status_code == 200:
-        user_data = response.json()
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        user_data = sp.current_user()
         country = user_data.get('country')
         return country
-    else:
+    except spotipy.SpotifyException as e:
+        print("Failed to get user market:", e)
         return None
     
 def get_recommendations(access_token, seed_artists, seed_tracks, market, limit=30):
-    # Construct the request URL
-    url = 'https://api.spotify.com/v1/recommendations'
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
-    params = {
-        'limit': limit,
-        'market': market,
-        'seed_artists': seed_artists,
-        'seed_tracks': seed_tracks
-    }
-
-    # Send the request to Spotify API
-    response = requests.get(url, headers=headers, params=params)
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        # Parse the response and extract recommended tracks
-        recommendations = response.json()['tracks']
-        recommended_tracks = [track['name'] for track in recommendations]
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        recommendations = sp.recommendations(seed_artists=seed_artists, seed_tracks=seed_tracks, limit=limit, country=market)
+        recommended_tracks = [track['name'] for track in recommendations['tracks']]
         return recommended_tracks
-    else:
-        # Handle errors if the request fails
-        print("Failed to get recommendations:", response.status_code)
+    except spotipy.SpotifyException as e:
+        print("Failed to get recommendations:", e)
         return None
     
 def add_recommendations_to_playlist(access_token, playlist_id, recommendations):
-    # Convert track names to track URIs
+    sp = spotipy.Spotify(auth=access_token)
     track_uris = []
     for track_name in recommendations:
-        track_uri = get_track_uri(access_token, track_name)
+        track_uri = get_track_uri(sp, track_name)
         if track_uri:
             track_uris.append(track_uri)
-
-    # Add the track URIs to the playlist
     if track_uris:
-        added = add_tracks_to_playlist(access_token, playlist_id, track_uris)
-        if added:
+        try:
+            sp.playlist_add_items(playlist_id, track_uris)
             return 'Recommendations added to playlist successfully!'
-        else:
+        except spotipy.SpotifyException as e:
+            print("Failed to add recommendations to playlist:", e)
             return 'Failed to add recommendations to playlist'
     else:
         return 'No recommendations found'
 
-
-def get_track_uri(access_token, track_name):
-    # Search for the track using its name
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    params = {
-        'q': track_name,
-        'type': 'track',
-        'limit': 1
-    }
-    response = requests.get('https://api.spotify.com/v1/search', headers=headers, params=params)
-    if response.status_code == 200:
-        # Extract the track URI from the response
-        items = response.json()['tracks']['items']
+def get_track_uri(sp, track_name):
+    try:
+        results = sp.search(q=f"track:{track_name}", type='track', limit=1)
+        items = results['tracks']['items']
         if items:
             track_uri = items[0]['uri']
             return track_uri
+    except spotipy.SpotifyException as e:
+        print("Error searching for track:", e)
     return None
 
 def add_tracks_to_playlist(access_token, playlist_id, track_uris):
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
-    params = {
-        'uris': track_uris
-    }
-    response = requests.post(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers, json=params)
-    if response.status_code == 201:
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        sp.playlist_add_items(playlist_id, track_uris)
         return True
-    else:
+    except spotipy.SpotifyException as e:
+        print("Failed to add tracks to playlist:", e)
         return False
     
 def refresh_playlist(access_token, playlist_id, refresh_token):
-    with app.app_context():
-        print("Starting refresh...")
-        
-        print("Access token before refresh: ", access_token)
-        print("Refresh token before refresh:", refresh_token)
-    
-        if is_token_expired(access_token):
-            print("Access token expired attempting to refresh token...")
-            access_token = refresh_access_token(refresh_token)
-        
-        #Just for testing delete later
-        #access_token = refresh_access_token(refresh_token)
-        
-        print("Access token after refresh: ", access_token)
-        
-        # Get the current user's user ID
-        user_id = get_user_id(access_token)
+    sp = spotipy.Spotify(auth=access_token)
+    print("Starting refresh...")
+    print("Access token before refresh: ", access_token)
+    print("Refresh token before refresh:", refresh_token)
 
-        if user_id:
-            # Hardcode the playlist name for now
-            playlist_name = "SpotDiscover"
+    if is_token_expired(access_token):
+        print("Access token expired attempting to refresh token...")
+        access_token = refresh_access_token(refresh_token)
+
+    print("Access token after refresh: ", access_token)
+    print("Refresh token after refresh:", refresh_token)
+
+    user_id = sp.me()['id']
+    if user_id:
+        playlist_name = "SpotDiscover"
         
-            # Check if the playlist already exists
-            existing_playlist_id = get_playlist_id(access_token, user_id, playlist_name)
-        
-            if existing_playlist_id:
-                # Get the tracks currently in the playlist
-                current_tracks = get_playlist_tracks(access_token, existing_playlist_id)
-            
-                # Remove existing tracks from the playlist
-                if current_tracks:
-                    remove_tracks_from_playlist(access_token, existing_playlist_id, current_tracks)
-                    print("Existing tracks removed from the playlist")
-            
-                # Get new recommendations and add them to the playlist
-                seed_artists = get_top_artists(access_token)
-                seed_tracks = get_top_tracks(access_token)
-                market = get_user_market(access_token)
-                recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
-                add_recommendations_to_playlist(access_token, existing_playlist_id, recommendations)
-                print("Playlist successfully refreshed!")
-            
-                return
-            else:
-                print("Playlist does not exist")
-                # Cancel the job if the playlist doesn't exist
-                scheduler.remove_job('refresh_job')
-                return
+        playlists = sp.current_user_playlists()
+        existing_playlist_id = None
+        for playlist in playlists['items']:
+            if playlist['name'] == playlist_name:
+                existing_playlist_id = playlist['id']
+                break
+
+        if existing_playlist_id:
+            current_tracks = sp.playlist_tracks(existing_playlist_id)
+            if current_tracks:
+                current_track_uris = [track['track']['uri'] for track in current_tracks['items']]
+                sp.playlist_remove_all_occurrences_of_items(existing_playlist_id, current_track_uris)
+                print("Existing tracks removed from the playlist")
+
+            seed_artists = get_top_artists(access_token)
+            seed_tracks = get_top_tracks(access_token)
+            market = get_user_market(access_token)
+            recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
+            add_recommendations_to_playlist(access_token, existing_playlist_id, recommendations)
+            print("Playlist successfully refreshed!")
+        else:
+            print("Playlist does not exist")
+            scheduler.remove_job('refresh_job')
         
 def is_token_expired(access_token):
-  response = requests.get('https://api.spotify.com/v1/me', headers={
-    'Authorization': 'Bearer ' + access_token
-  })
-  return response.status_code == 401
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        # Make a simple request to Spotify API to check if token is valid
+        sp.current_user()
+        return False
+    except spotipy.SpotifyException as e:
+        if e.http_status == 401:
+            return True
+        else:
+            raise e  # If it's not a 401 error, raise the exception for further analysis
 
 def refresh_access_token(refresh_token):
-    auth_str = f"{client_id}:{client_secret}"
-    auth_b64 = base64.b64encode(auth_str.encode()).decode('utf-8')
+    # Initialize SpotifyOAuth object with client_id, client_secret, and redirect_uri
+    sp_oauth = oauth2.SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri)
 
-    headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': f'Basic {auth_b64}'
-    }
+    # Refresh the access token using the refresh token
+    token_info = sp_oauth.refresh_access_token(refresh_token)
 
-    data = {
-        'grant_type' : 'refresh_token',
-        'refresh_token' : refresh_token
-    }
-
-    response = requests.post('https://accounts.spotify.com/api/token', data=data, headers=headers) #sends request off to spotify
-
-    if(response.status_code == 200): #checks if request was valid
+    if "access_token" in token_info:
         print("Refresh token successfully refreshed")
-        response_json = response.json()
-        return response_json["access_token"]
+        return token_info["access_token"]
     else:
-        print(f"ERROR! Access token did not return 200 during refresh: {response.status_code}")
-        print(f"Response content: {response.text}")  # Log the full response content
+        print(f"ERROR! Access token refresh failed: {token_info.get('error', 'Unknown error')}")
+        return None
 
-# Function to get the playlist ID if it already exists
 def get_playlist_id(access_token, user_id, playlist_name):
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    response = requests.get(f'https://api.spotify.com/v1/me/playlists', headers=headers)
-    if response.status_code == 200:
-        playlists = response.json()['items']
-        for playlist in playlists:
-            if playlist['name'] == playlist_name:
-                return playlist['id']
+    # Initialize Spotipy client
+    sp = spotipy.Spotify(auth=access_token)
+
+    # Get user's playlists
+    playlists = sp.user_playlists(user_id)
+
+    # Search for the playlist by name
+    for playlist in playlists['items']:
+        if playlist['name'] == playlist_name:
+            return playlist['id']
+
     return None
     
 def get_user_playlists(access_token, user_id):
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    params = {
-        'limit': 50  # Adjust the limit as needed
-    }
-    response = requests.get(f'https://api.spotify.com/v1/users/{user_id}/playlists', headers=headers, params=params)
-    if response.status_code == 200:
-        playlists_data = response.json().get('items', [])
-        playlists = [{'id': playlist['id'], 'name': playlist['name']} for playlist in playlists_data]
-        return playlists
-    else:
-        print("Failed to retrieve user playlists:", response.status_code)
-        return None
+    # Initialize Spotipy client
+    sp = spotipy.Spotify(auth=access_token)
+
+    # Get user's playlists
+    playlists = sp.user_playlists(user_id)
+
+    # Extract playlist information
+    playlist_info = [{'id': playlist['id'], 'name': playlist['name']} for playlist in playlists['items']]
+
+    return playlist_info
     
 def get_playlist_tracks(access_token, playlist_id):
-    headers = {
-        'Authorization': f'Bearer {access_token}'
-    }
-    response = requests.get(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers)
-    if response.status_code == 200:
-        tracks = response.json()['items']
-        track_uris = [track['track']['uri'] for track in tracks]
-        return track_uris
-    else:
-        return None
+    # Initialize Spotipy client
+    sp = spotipy.Spotify(auth=access_token)
+
+    # Get tracks of the playlist
+    tracks = sp.playlist_tracks(playlist_id)
+
+    # Extract track URIs
+    track_uris = [track['track']['uri'] for track in tracks['items']]
+
+    return track_uris
     
 def remove_tracks_from_playlist(access_token, playlist_id, track_uris):
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
-    data = {
-        'tracks': [{'uri': uri} for uri in track_uris]
-    }
-    response = requests.delete(f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks', headers=headers, json=data)
-    if response.status_code == 200:
-        return True
-    else:
-        return False
+    # Initialize Spotipy client
+    sp = spotipy.Spotify(auth=access_token)
+
+    # Remove tracks from the playlist
+    sp.playlist_remove_all_occurrences_of_items(playlist_id, track_uris)
+
+    return True  # Assuming successful removal, Spotipy does not return a response
     
 # Scheduler using APScheduler
 scheduler = BackgroundScheduler()
