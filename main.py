@@ -50,7 +50,9 @@ def callback():
     # Exchange the authorization code for an access token
     token_info = sp_oauth.get_access_token(code)
     access_token = token_info['access_token']
+    print("Access token in callback:", access_token, end="\n")
     refresh_token = token_info.get('refresh_token')
+    print("Refresh token in callback:", refresh_token, end="\n")
 
     # Store the access token and refresh token in the session or database
     session['access_token'] = access_token
@@ -69,26 +71,30 @@ def generate_playlist():
     global access_token, playlist_id, refresh_token
 
     access_token = request.form.get('access_token')
-    refresh_token = request.form.get('refresh_token')  # Assuming it's passed in the request
+    refresh_token = request.form.get('refresh_token')
 
-    # Get the current user's user ID
     user_id = get_user_id(access_token)
 
     if user_id:
-        # Hardcode the playlist name for now
         playlist_name = "SpotDiscover"
-
-        # Get top artists and top tracks
         seed_artists = get_top_artists(access_token)
         seed_tracks = get_top_tracks(access_token)
         market = get_user_market(access_token)
 
-        # Create the empty playlist with artists and tracks as description
-        playlist_id = create_playlist(access_token, user_id, playlist_name, seed_artists, seed_tracks)
+        # Generate description with seed artists and tracks
+        artist_names = [sp.artist(artist)['name'] for artist in seed_artists]
+        track_names = [sp.track(track)['name'] for track in seed_tracks]
+        description = f"Seed artists: {', '.join(artist_names)}. Seed tracks: {', '.join(track_names)}"
+
+        # Create the playlist with the new description
+        playlist_id = create_playlist(access_token, user_id, playlist_name, description)
 
         if playlist_id:
             recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
             add_recommendations_to_playlist(access_token, playlist_id, recommendations)
+
+            # Update the playlist description
+            update_playlist_description(access_token, playlist_id, seed_artists, seed_tracks)
 
             return redirect(url_for('successful_generate', access_token=access_token, playlist_id=playlist_id, refresh_token=refresh_token))
         else:
@@ -102,17 +108,21 @@ def successful_generate():
 
     user_data = sp.current_user()
     access_token = session.get('access_token')  # Get access_token from session
+    print("Access token in successful_generate:", access_token, end="\n")
+
     playlist_id = request.args.get('playlist_id')
     refresh_token = session.get('refresh_token')  # Get refresh_token from session
-
+    print("Refresh token in successful_generate:", refresh_token, end="\n")
     start_scheduler(access_token, playlist_id, refresh_token)
 
     return render_template('successful_generate.html')
 
 def start_scheduler(access_token, playlist_id, refresh_token):
-    # Remove refresh_token from the function signature
-    print("Refresh Token in start_scheduler: ", refresh_token)
-    scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    print("Access token in start_scheduler:", access_token, end="\n")
+    print("Refresh token in start_scheduler: ", refresh_token, end="\n")
+    scheduler.add_job(refresh_playlist, CronTrigger(minute='*'), id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    #scheduler.add_job(refresh_playlist, CronTrigger(hour=0), id='refresh_job', args=[access_token, playlist_id, refresh_token])
+    scheduler.start()
     
 def get_user_id(access_token):
     sp = spotipy.Spotify(auth=access_token)
@@ -125,26 +135,30 @@ def get_user_id(access_token):
         return None
 
 
-def create_playlist(access_token, user_id, playlist_name, artists, tracks):
+def create_playlist(access_token, user_id, playlist_name, description):
     sp = spotipy.Spotify(auth=access_token)
     try:
-        # Get the names of artists
-        artist_names = [sp.artist(artist)['name'] for artist in artists]
-        # Get the names of tracks
-        track_names = [sp.track(track)['name'] for track in tracks]
-
-        # Construct the playlist description
-        description = f"Recommendations based on top artists: {', '.join(artist_names)} and top tracks: {', '.join(track_names)}"
-
-        # Create the playlist with the provided name and description
         playlist_data = sp.user_playlist_create(user=user_id, name=playlist_name, description=description, public=True)
-
-        # Retrieve the playlist ID from the response
         playlist_id = playlist_data['id']
         return playlist_id
     except spotipy.SpotifyException as e:
         print("Failed to create playlist:", e)
         return None
+    
+def update_playlist_description(access_token, playlist_id, seed_artists, seed_tracks):
+    sp = spotipy.Spotify(auth=access_token)
+    try:
+        # Get the names of seed artists and tracks
+        artist_names = [sp.artist(artist)['name'] for artist in seed_artists]
+        track_names = [sp.track(track)['name'] for track in seed_tracks]
+        # Construct the updated description
+        description = f"Seed artists: {', '.join(artist_names)}. Seed tracks: {', '.join(track_names)}"
+
+        # Update the playlist description
+        sp.playlist_change_details(playlist_id, description=description)
+        print("Playlist description updated successfully!")
+    except spotipy.SpotifyException as e:
+        print("Failed to update playlist description:", e)
 
 def get_top_artists(access_token):
     sp = spotipy.Spotify(auth=access_token)
@@ -243,8 +257,8 @@ def refresh_playlist(access_token, playlist_id, refresh_token):
         print("Access token expired attempting to refresh token...")
         access_token = refresh_access_token(refresh_token)
 
-    print("Access token after refresh: ", access_token)
-    print("Refresh token after refresh:", refresh_token)
+    print("Access token after potential refresh: ", access_token)
+    print("Refresh token after potential refresh:", refresh_token)
 
     user_id = sp.me()['id']
     if user_id:
@@ -269,6 +283,7 @@ def refresh_playlist(access_token, playlist_id, refresh_token):
             market = get_user_market(access_token)
             recommendations = get_recommendations(access_token, seed_artists, seed_tracks, market)
             add_recommendations_to_playlist(access_token, existing_playlist_id, recommendations)
+            update_playlist_description(access_token, existing_playlist_id, seed_artists, seed_tracks)
             print("Playlist successfully refreshed!")
         else:
             print("Playlist does not exist")
